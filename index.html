@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Open-Sora 2.0 技术报告</title>
+    <style>
+        :root {
+            --primary-color: #3498db;
+            --secondary-color: #2980b9;
+            --text-color: #333;
+            --light-bg: #f5f5f5;
+            --border-color: #e0e0e0;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+            line-height: 1.6;
+            color: var(--text-color);
+            background-color: #fff;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        header {
+            text-align: center;
+            margin-bottom: 40px;
+            padding: 20px;
+            background-color: var(--light-bg);
+            border-radius: 8px;
+            border-bottom: 3px solid var(--primary-color);
+        }
+        
+        h1 {
+            font-size: 2.8em;
+            color: var(--primary-color);
+            margin-bottom: 10px;
+        }
+        
+        h2 {
+            font-size: 2em;
+            color: var(--secondary-color);
+            margin: 30px 0 15px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid var(--border-color);
+        }
+        
+        h3 {
+            font-size: 1.5em;
+            margin: 25px 0 15px;
+            color: var(--secondary-color);
+        }
+        
+        p {
+            margin-bottom: 15px;
+            text-align: justify;
+        }
+        
+        .authors {
+            font-style: italic;
+            margin-bottom: 15px;
+            color: #666;
+        }
+        
+        .abstract {
+            background-color: var(--light-bg);
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+            border-left: 4px solid var(--primary-color);
+        }
+        
+        .figure {
+            margin: 30px 0;
+            text-align: center;
+        }
+        
+        .figure img {
+            max-width: 100%;
+            border-radius: 8px;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.1);
+        }
+        
+        .figure-caption {
+            font-size: 0.9em;
+            color: #666;
+            margin-top: 10px;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        
+        table, th, td {
+            border: 1px solid var(--border-color);
+        }
+        
+        th, td {
+            padding: 12px;
+            text-align: left;
+        }
+        
+        th {
+            background-color: var(--light-bg);
+        }
+        
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        
+        .highlight {
+            background-color: #fffde7;
+            padding: 2px 5px;
+            border-radius: 3px;
+        }
+        
+        .references {
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 2px solid var(--border-color);
+        }
+        
+        .references ol {
+            padding-left: 25px;
+        }
+        
+        .references li {
+            margin-bottom: 8px;
+        }
+        
+        .contributors {
+            margin-top: 40px;
+            background-color: var(--light-bg);
+            padding: 20px;
+            border-radius: 8px;
+        }
+        
+        .section {
+            margin-bottom: 40px;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Open-Sora 2.0: 以20万美元训练商业级视频生成模型</h1>
+        <div class="authors">Open-Sora 团队 | HPC-AI Tech</div>
+    </header>
+    
+    <div class="abstract">
+        <h3>摘要</h3>
+        <p>视频生成模型在过去一年中取得了显著进展。AI视频的质量持续提高，但代价是更大的模型规模、更多的数据量，以及更高的训练计算需求。在本报告中，我们介绍了Open-Sora 2.0，这是一个仅花费20万美元训练的商业级视频生成模型。借助这个模型，我们证明了高性能视频生成模型的训练成本是高度可控的。我们详细说明了所有促成这一效率突破的技术，包括数据筛选、模型架构、训练策略和系统优化。根据人工评估结果和VBench评分，Open-Sora 2.0与全球领先的视频生成模型相当，包括开源的HunyuanVideo和闭源的Runway Gen-3 Alpha。通过完全开源Open-Sora 2.0，我们旨在使先进的视频生成技术民主化，促进内容创作领域更广泛的创新和创造力。所有资源均可在https://github.com/hpcaitech/Open-Sora公开获取。</p>
+    </div>
+    
+    <div class="section">
+        <h2>1. 引言</h2>
+        <p>过去一年见证了视频生成模型的爆发性增长。自2024年2月OpenAI的Sora问世以来，一系列视频生成模型—无论是开源[16, 19, 22, 27, 43]还是专有[26, 31, 34]—以前所未有的速度出现，每个都致力于实现"Sora级别"的生成质量。虽然生成视频的质量不断提高，但模型规模、数据量和计算资源明显呈现快速增长趋势。继大型语言模型(LLMs)[15, 18]的成功扩展之后，研究人员现在将类似的扩展原则[19]应用于视频生成，在模型架构和训练技术上趋于相似。</p>
+        
+        <p>然而，在本报告中，我们展示了一个高性能视频生成模型可以以高度可控的成本训练，提供关于成本效益训练和效率优化的新见解。我们构建了Open-Sora 2.0，这是一个仅花费20万美元训练的商业级视频生成模型。如表4所示，在公平比较的基础上，其训练成本比MovieGen[31]和Step-Video-T2V[27]等可比模型低5-10倍。这种显著的成本效益源于我们对数据筛选、训练策略和AI基础架构的联合优化—这些都在后续章节中详细介绍。</p>
+
+        <div class="figure">
+            <img src="/api/placeholder/800/600" alt="视频模型评估对比图">
+            <div class="figure-caption">图1：Open-Sora 2.0与其他领先视频生成模型的人工偏好评估。获胜率代表我们的模型在与竞争模型的比较中被优先选择的百分比。评估在精心设计的100个提示上进行，覆盖三个关键方面：1)视觉质量，2)提示遵循度，3)运动质量。结果表明，我们的模型在所有三个方面都优于其他顶级模型。</div>
+        </div>
+        
+        <p>图1展示了Open-Sora 2.0与其他全球领先视频生成模型的人工偏好评估。比较的模型包括专有模型如Runway Gen-3 Alpha[34]、Luma Ray2[26]以及开源模型如HunyuanVideo[19]和Step-Video-T2V[27]。我们在三个重要方面评估这些模型：1)视觉质量，2)提示遵循度，3)运动质量。尽管我们的模型成本较低，但在三个方面中至少有两个方面优于这些顶级模型，展示了其强大的商业部署潜力。</p>
+        
+        <p>本报告的结构如下：在第2节，我们详细阐述了数据策略，包括层次化数据过滤系统和注释方法。第3节详细介绍了模型架构，涵盖了我们新颖的Video DC-AE自编码器设计和DiT架构。第4节探讨了我们的成本效益训练方法，使得仅需20万美元即可实现商业级质量。第5节介绍了我们的条件控制方法，包括图像到视频和运动控制技术。第6节概述了最大化训练效率的系统优化，第7节评估了我们模型与领先视频生成模型的性能对比。最后，我们总结了我们的贡献并展望未来研究。</p>
+    </div>
+    
+    <div class="section">
+        <h2>2. 数据</h2>
+        <p>我们的数据目标是建立一个层次化的数据金字塔，满足渐进式训练过程的需求。为此，我们开发了一系列彼此独立运作的过滤器，旨在解决各种类型的数据检测问题。通过逐步加强过滤程度，我们可以获得规模更小但纯度和质量更高的数据子集。</p>
+        
+        <h3>2.1 数据过滤</h3>
+        <p>图2展示了层次化数据过滤系统。我们首先将原始视频预处理为可训练的视频剪辑，然后逐步应用一系列从宽松到严格的过滤器，构建一个结构化的数据金字塔。</p>
+        
+        <div class="figure">
+            <img src="/api/placeholder/800/400" alt="数据过滤流程图">
+            <div class="figure-caption">图2：层次化数据过滤流程。原始视频首先被转换为可训练的视频剪辑。然后，我们应用各种互补的评分过滤器，为每个训练阶段获取数据子集。</div>
+        </div>
+        
+        <h3>2.1.1 预处理</h3>
+        <p>预处理阶段将原始视频转换为适合训练的短片段。在此阶段，我们首先消除损坏的文件和具有异常属性的原始视频。具体来说，我们过滤掉持续时间少于2秒、每像素比特(bpp)低于0.02、帧率(fps)低于16、纵横比在[1/3, 3]范围之外的视频，以及具有"Constrained Baseline"配置文件的视频。</p>
+        
+        <p>接着，我们在原始视频中检测连续镜头并根据检测结果将其分割为短片段。对于镜头检测，我们应用FFmpeg[12]的libavfilter来计算场景分数，该分数量化了帧之间的视觉差异。当场景分数变化超过经验确定的阈值时，就会识别出镜头边界。</p>
+        
+        <p>最后，我们根据镜头检测结果分割视频，确保输出片段符合特定格式要求：帧率(fps)低于30，长边不超过1080像素，H.264编解码器。此外，在此过程中会移除黑边。对于超过8秒的镜头，我们进一步将其分为多个8秒的片段，而短于2秒的镜头则被丢弃。</p>
+        
+        <h3>2.1.2 评分过滤</h3>
+        <p>为解决原始数据中的各种缺陷，我们开发了一套互补的过滤器，每个针对数据质量的特定方面。这些过滤器共同作为一个全面且健壮的净化系统。通常，每个过滤器通过根据其各自标准分配分数来评估样本，过滤强度由阈值控制。以下介绍所有基于评分的过滤器。</p>
+        
+        <p><strong>美学评分：</strong>我们使用CLIP+MLP美学分数预测器[35]评估样本的美学质量。对于视频样本，我们提取第一帧、中间帧和最后一帧，计算它们的个别分数，并取平均值作为最终美学分数。</p>
+        
+        <p><strong>运动评分：</strong>视频的运动强度使用FFmpeg的libavfilter库中的VMAF运动分数[12]来测量。极低或过高运动分数的视频会被过滤掉，以维持均衡的运动范围。</p>
+        
+        <p><strong>模糊检测：</strong>我们使用OpenCV[3]的拉普拉斯算子评估图像清晰度。如果拉普拉斯图像的方差低于可配置阈值，则认为样本模糊。对于视频样本，我们提取五个均匀间隔的帧，并采用多数投票方法确定模糊程度。</p>
+        
+        <p><strong>OCR：</strong>我们使用PaddleOCR[2]检测文本边界框，并计算置信度分数超过0.7的边界框总面积。含有过多文本的图像或视频会被丢弃，以避免不需要的叠加层。</p>
+        
+        <p><strong>相机抖动检测：</strong>我们使用PySceneDetect库[6]的镜头边界检测来检测相机抖动。如果平均帧间变化超过预定义阈值，则将视频识别为具有相机抖动。</p>
+
+        <h3>2.2 数据注释</h3>
+        <p>对于图像描述，我们利用开源视觉-语言模型LLaVA-Video[42]为256px视频添加注释。我们提示模型关注六个方面进行详细全面的描述，分别是：1)主要对象；2)对象的动作；3)背景和环境；4)光照条件和氛围；5)相机运动；6)视频风格，如现实主义、电影感、3D、动画等。对于高分辨率768px训练数据，我们利用更强大的专有模型Qwen 2.5 Max[38]生成更准确和语义对齐的描述。我们发现Qwen 2.5 Max产生的幻觉更少，并提供比LLaVA-Video更好的语义一致性。</p>
+        
+        <p>对于训练和推理，我们在描述后附加运动分数，以实现对生成视频中运动强度的可配置控制。</p>
+
+        <h3>2.3 数据统计</h3>
+        <p>我们对视频数据的一些关键属性进行了统计分析，包括美学分数、持续时间（秒）、纵横比（高/宽）和描述长度。为进一步探索文本内容的分布，我们使用词云可视化视频描述中的常见词汇。</p>
+        
+        <div class="figure">
+            <img src="/api/placeholder/800/400" alt="数据属性分布图">
+            <div class="figure-caption">图3：整个视频数据集的关键属性分布。</div>
+        </div>
+        
+        <div class="figure">
+            <img src="/api/placeholder/600/400" alt="视频描述词云">
+            <div class="figure-caption">图4：视频描述词云。</div>
+        </div>
+        
+        <p>如图3所示，大多数视频的美学分数在4.5到5.5之间，表明总体上视觉吸引力适中。视频持续时间在2到8秒之间，近一半的数据集由6到8秒的片段组成，这些片段提供了更丰富的时间信息来学习动态模式。纵横比分析显示，大多数视频的纵横比在0.5到0.75之间，对应于16:9格式，确保了跨不同格式的适应性并增强了模型的泛化能力。此外，超过70%的视频描述超过75个词，提供了详细描述，有助于更加信息丰富的训练过程。</p>
+        
+        <p>图4展示了一个词云，说明了视频描述中的词汇分布。这些描述不仅包括主要对象如"person"和他们的动作如"wearing"，还包括背景元素（"background"、"setting"、"atmosphere"）和光照条件（"lighting"）。这与我们在2.2节介绍的VLM提示策略的六个关键方面一致。此外，"person"和"individual"的频繁出现表明数据集的相当部分特写了人物主体。</p>
+    </div>
+    
+    <div class="section">
+        <h2>3. 模型架构</h2>
+        <p>视频生成模型的两个关键组件是自编码器和扩散变换器。对于自编码器，我们的模型最初在HunyuanVideo的VAE上训练，后来适应到我们的Video DC-AE，其结构在3.1节详细说明。扩散变换器的架构在3.2节中介绍。</p>
+        
+        <h3>3.1 3D自编码器</h3>
+        <p>我们首先利用开源的HunyuanVideo VAE[19]作为我们模型的初始自编码器。为进一步减少训练和推理成本，我们开发了一个具有深度压缩的视频自编码器（Video DC-AE，名称来源于[9]），在保持高重建保真度的同时提高效率。</p>
+        
+        <p>HunyuanVideo VAE实现了4×8×8的压缩比，这使得一个8秒、高分辨率（1280×720）、16 FPS的视频可以转换为32×160×90的潜在表示。然而，即使使用2×2的图像块大小，我们的生成模型仍需要处理每个训练视频约115K个标记，导致相当大的计算需求。</p>
+        
+        <p>为解决上述挑战，我们发现空间维度存在潜在冗余，并提出将空间压缩比增加到32，同时保持相同的时间压缩比为4。这一调整有效减少了空间标记数量，同时在我们的Video DC-AE中保留了基本的运动特征。由于我们的AE训练数据由32帧、256px视频组成，这种新的压缩比允许我们在8×8×8的潜在形状下训练自编码器，在所有维度中保持相同级别的信息。</p>
+        
+        <div class="figure">
+            <img src="/api/placeholder/800/400" alt="Video DC-AE架构图">
+            <div class="figure-caption">图5：Video DC-AE的架构。(a) Video DC-AE概览：编码器中的每个块引入空间下采样，而时间下采样发生在块4和5，解码器中具有相应的对称结构。(b) Video DC-AE块中的残差连接。</div>
+        </div>
+        
+        <p>Chen等人[9]将DC-AE作为一种有效方法来实现更高的下采样比，同时保持重建质量。虽然原始DC-AE主要针对图像编码进行优化，但我们通过合并时间压缩机制将其架构扩展为支持视频编码。</p>
+        
+        <p>如图5(a)所示，我们的Video DC-AE编码器由三个残差块和三个EfficientViT块[5]组成，解码器采用对称结构。前五个编码器块和后五个解码器块分别作为下采样和上采样层。</p>
+        
+        <p>为了使DC-AE适应视频编码，我们将2D操作（如卷积、标准化）替换为3D操作。此外，我们在编码器的最后两个下采样块（块4和5）中引入时间压缩，在解码器的前两个上采样块（块2和3）中引入时间上采样，以有效重建时间信息。</p>
+        
+        <p>此外，我们遵循DC-AE引入特殊残差块来连接下采样和上采样块。这是因为Chen等人[9]发现这些块存在梯度传播问题，如果没有残差，特别难以训练高压缩自编码器。</p>
+        
+        <p>如图5(b)所示，我们的下采样残差块遵循DC-AE的像素混洗策略，将空间和时间维度的像素重新分配到通道维度，然后通过通道间平均来实现所需的压缩。上采样残差块执行相反的操作，首先复制通道，然后将它们重新分配回空间和时间维度，以重建原始结构。</p>
+        
+        <table>
+            <tr>
+                <th>模型</th>
+                <th>下采样 (T×H×W)</th>
+                <th>信息下采样</th>
+                <th>通道</th>
+                <th>因果</th>
+                <th>LPIPS↓</th>
+                <th>PSNR↑</th>
+                <th>SSIM↑</th>
+            </tr>
+            <tr>
+                <td>Open Sora 1.2 [43]</td>
+                <td>4 × 8 × 8</td>
+                <td>192</td>
+                <td>4</td>
+                <td>✓</td>
+                <td>0.161</td>
+                <td>27.504</td>
+                <td>0.756</td>
+            </tr>
+            <tr>
+                <td>StepVideo VAE [27]</td>
+                <td>8 × 16 × 16</td>
+                <td>96</td>
+                <td>64</td>
+                <td>✓</td>
+                <td>0.082</td>
+                <td>28.719</td>
+                <td>0.818</td>
+            </tr>
+            <tr>
+                <td>HunyuanVideo VAE [19]</td>
+                <td>4 × 8 × 8</td>
+                <td>48</td>
+                <td>16</td>
+                <td>✓</td>
+                <td>0.046</td>
+                <td>30.240</td>
+                <td>0.856</td>
+            </tr>
+            <tr style="background-color: #fffde7;">
+                <td>Video DC-AE</td>
+                <td>4 × 32 × 32</td>
+                <td>96</td>
+                <td>128</td>
+                <td>×</td>
+                <td>0.051</td>
+                <td>30.538</td>
+                <td>0.863</td>
+            </tr>
+            <tr>
+                <td>Video DC-AE</td>
+                <td>4 × 32 × 32</td>
+                <td>48</td>
+                <td>256</td>
+                <td>×</td>
+                <td>0.049</td>
+                <td>30.777</td>
+                <td>0.872</td>
+            </tr>
+        </table>
+        <div class="figure-caption">表1：自编码器重建性能比较。黄色背景标记的Video DC-AE被选择用于生成模型适配。</div>
+        
+        <p>我们从头训练Video DC-AE并评估其重建质量，结果如表1所示。我们的模型与OpenSora 1.2 VAE、最近开源的StepVideo VAE[27]和HunyuanVideo VAE[19]进行比较。结果表明，Video DC-AE实现了有竞争力的性能，与性能最好的HunyuanVideo VAE相比，LPIPS[41]分数仅有轻微下降，同时保持了强大的PSNR和SSIM分数。</p>
+        
+        <p>此外，虽然256通道版本的Video DC-AE提供了更高的重建质量，但我们选择了128通道版本用于视频生成模型，以便因其减少的通道大小而实现更快的适配（有关更多详细信息，请参见4.3节）。</p>
+        
+        <h3>3.2 DiT架构</h3>
+        <div class="figure">
+            <img src="/api/placeholder/400/600" alt="Open-Sora扩散变换器架构">
+            <div class="figure-caption">图6：Open-Sora扩散变换器架构。</div>
+        </div>
+        
+        <p>为实现更高的视频质量，我们采用全注意力来有效捕捉长距离依赖关系。通过自编码器对输入进行编码后，我们对潜在表示进行分块以提高计算效率并改善模型学习。Sana[39]表明，块大小为1可以产生更好的训练稳定性和视频生成中的更精细细节。凭借Video DC-AE的高压缩比，我们可以将块大小减小到1（即，根本没有块），而当在我们的生成模型中使用HunyuanVideo自编码器时，仍需要2的块大小。</p>
+        
+        <p>受FLUX的MMDiT[20]启发，我们采用混合变换器架构，结合了双流和单流处理块。在双流块中，文本和视频信息分别处理，以促进每个模态内更有效的特征提取。随后，单流块集成这些特征，以促进有效的跨模态交互。为进一步增强模型捕捉空间和时间信息的能力，我们应用3D RoPE（旋转位置嵌入）[37]，它将传统位置编码扩展到三维空间，使模型能够更好地表示时间上的运动动态。</p>
+        
+        <p>对于文本编码，我们利用T5-XXL[10]和CLIP-Large[32]，这两个高容量预训练模型以其强大的语义理解著称。T5-XXL捕捉复杂的文本语义，而CLIP-Large改善了文本和视觉概念之间的对齐，导致视频生成中更准确的提示遵循。</p>
+        
+        <p>模型架构概览如图6所示，详细的架构规格如表2所示。</p>
+        
+        <table>
+            <tr>
+                <th>双流层</th>
+                <th>单流层</th>
+                <th>模型维度</th>
+                <th>FFN维度</th>
+                <th>注意力头</th>
+                <th>块大小</th>
+            </tr>
+            <tr>
+                <td>19</td>
+                <td>38</td>
+                <td>3072</td>
+                <td>12288</td>
+                <td>24</td>
+                <td>2</td>
+            </tr>
+        </table>
+        <div class="figure-caption">表2：Open-Sora 2.0 110亿参数视频生成模型的架构超参数。</div>
+    </div>
+    
+    <div class="section">
+        <h2>4. 模型训练</h2>
+        <p>商业级视频生成模型通常需要超过100亿参数和O(100M)级的训练样本。为减轻与训练相关的巨大计算成本，我们提出了一个成本效益的训练流程，如表3所示。我们的方法包含三个关键阶段：(1)在低分辨率视频数据上训练文本到视频模型，(2)在低分辨率视频数据上训练图像到视频模型，(3)在高分辨率视频上微调图像到视频模型。</p>
+        
+        <table>
+            <tr>
+                <th>训练阶段</th>
+                <th>数据集</th>
+                <th>CP</th>
+                <th>#迭代</th>
+                <th>#GPU</th>
+                <th>#GPU天</th>
+                <th>美元</th>
+            </tr>
+            <tr>
+                <td>256px T2V</td>
+                <td>70M</td>
+                <td>1</td>
+                <td>85k</td>
+                <td>224</td>
+                <td>2240</td>
+                <td>$107.5k</td>
+            </tr>
+            <tr>
+                <td>256px T/I2V</td>
+                <td>10M</td>
+                <td>1</td>
+                <td>13k</td>
+                <td>192</td>
+                <td>384</td>
+                <td>$18.4k</td>
+            </tr>
+            <tr>
+                <td>768px T/I2V</td>
+                <td>5M</td>
+                <td>4</td>
+                <td>13k</td>
+                <td>192</td>
+                <td>1536</td>
+                <td>$73.7k</td>
+            </tr>
+            <tr>
+                <td>总计</td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td>4160</td>
+                <td>$199.6k</td>
+            </tr>
+        </table>
+        <div class="figure-caption">表3：训练配置和成本细分。此表展示了不同阶段的训练配置以及单次完整训练运行的总成本，假设H200的租用价格为每GPU小时2美元。</div>
+        
+        <h3>4.1 高效训练策略</h3>
+        <p>为在有限预算内开发高质量的视频生成模型，我们的训练策略强调以下四个关键方面：</p>
+        
+        <p><strong>利用开源图像模型</strong> 先前研究[16, 28, 43]已经证明，在图像数据集上预训练可以显著加速视频模型训练。为避免从头训练图像模型的高成本，我们采用了开源解决方案。具体来说，我们采用Flux[20]，这是一个具有110亿参数的最先进文本到图像模型，提供了足够的能力来生成高质量视频。我们使用Flux初始化我们的文本到视频模型，并经验性地发现，尽管它是一个蒸馏模型，这种初始化对进一步训练是有效的。</p>
+        
+        <p><strong>高质量训练数据</strong> 受PixArt[8]高效图像训练策略的启发，我们假设高质量视频数据可以大幅提高训练效率。因此，我们从大规模数据集中筛选出高质量子集用于低分辨率训练。对于高分辨率微调，我们施加更严格的选择标准，以确保卓越的视频质量。</p>
+        
+        <p><strong>在低分辨率学习运动</strong> 训练商业视频生成模型在计算上非常昂贵，特别是在高分辨率下。为减轻这一成本，我们首先在256px分辨率视频上训练，让模型高效学习多样化的运动模式。然而，我们观察到，虽然模型有效捕捉运动，但低分辨率输出往往显得模糊。增加分辨率显著提高了感知质量和人类评价反馈。</p>
+        
+        <table>
+            <tr>
+                <th>模型</th>
+                <th>#GPU</th>
+                <th>GPU小时</th>
+                <th>成本(单次运行)</th>
+            </tr>
+            <tr>
+                <td>Movie Gen [31]</td>
+                <td>6144</td>
+                <td>1.25M*</td>
+                <td>$2.5M*</td>
+            </tr>
+            <tr>
+                <td>Step-Video-T2V [27]</td>
+                <td>2992*</td>
+                <td>500k*</td>
+                <td>$1M*</td>
+            </tr>
+            <tr>
+                <td>Open Sora 2.0</td>
+                <td>224</td>
+                <td>100k</td>
+                <td>$200k</td>
+            </tr>
+        </table>
+        <div class="figure-caption">表4：不同视频生成模型的训练成本比较。标有*的值是基于公开可用信息估计的。我们的Open-Sora 2.0的训练成本比其他模型低5-10倍。</div>
+        
+        <p>如表5和表6所示，在768px分辨率下训练129帧视频比在256px下慢40倍。这种性能差距源于注意力机制的二次计算复杂度随着标记数量的增加而增加。为优化效率，我们将大部分计算资源分配给低分辨率训练，减少了对昂贵高分辨率计算的需求。</p>
+        
+        <p><strong>图像到视频模型促进分辨率适应</strong> 我们发现，使用图像到视频方法将模型从256px适应到768px分辨率比使用文本到视频方法要高效得多。我们假设，在静态图像上调节模型使其能够更专注于运动生成，这是在低分辨率训练中已经很好学习到的能力。</p>
+        
+        <p>基于此观察，我们优先在高分辨率上训练图像到视频模型。在推理过程中，我们首先从文本提示生成图像，然后合成同时基于图像和文本的视频。在训练过程中，低分辨率文本/图像到视频训练，然后在高分辨率视频上进行简短微调，以最少的额外训练产生高质量结果。</p>
+        
+        <p>通过我们提出的方法，我们成功地将一次性训练成本控制在20万美元以内，详情见表3。我们根据公开可用信息估计了Movie Gen[31]和Step-Video-T2V[27]的训练成本，总结在表4中。我们的模型实现了5-10倍低于它们的训练成本。我们希望这些见解将有助于未来研究中降低高质量视频生成模型的训练成本。</p>
+        
+        <h3>4.2 训练设置</h3>
+        <p>我们的训练设置主要基于我们之前的迭代，Open-Sora 1.2[43]。我们采用流匹配(flow matching)[23]作为主要训练目标，并使用AdamW[25]优化器，β值为(0.9, 0.999)，ϵ值为1×10^-15。不应用权重衰减。学习率在阶段1和2的前40k步设置为5×10^-5，随后在最后45k步衰减至3×10^-5。对于阶段3，学习率保持为5×10^-5，而在阶段3中，降低至1×10^-5。应用梯度范数裁剪，阈值为1。</p>
+        
+        <p><strong>训练目标</strong> 我们的流匹配方法类似于Stable Diffusion 3[11]中使用的方法。我们将视频潜在表示表示为X0，高斯噪声X1~N(0, 1)。模型fθ以插值潜在表示Xt = (1-t)X0 + tX1为输入，训练预测速度分量X0-X1。相应的损失函数表示为：</p>
+        
+        <p style="text-align: center;">L = E<sub>t,X0,X1</sub>[||f<sub>θ</sub>(X<sub>t</sub>, t, y) - (X<sub>0</sub> - X<sub>1</sub>)||]</p>
+        
+        <p>其中y表示条件输入（文本和/或图像）。时间步t首先从logit-normal分布采样，然后根据X0的形状进行缩放。鉴于更高分辨率和更长持续时间的视频更容易受到噪声影响，我们应用以下变换：</p>
+        
+        <p style="text-align: center;">t ← (αt)/(1 + (α - 1)t)</p>
+        
+        <p>其中α与T×H×W的乘积成正比。在推理过程中也应用相同的方法。</p>
+        
+        <h3>4.3 高压缩自编码器适配</h3>
+        <p>如前所述，训练视频生成模型的高计算成本源于大量标记和注意力计算的主导地位。在单次传递中生成一分钟视频将在未来产生极高的成本。为进一步降低训练费用，我们探索使用高压缩自编码器（Video DC-AEs）训练视频生成模型。</p>
+        
+        <p><strong>优势：</strong>利用高压缩视频自编码器可以显著减少视频生成所需的标记数量，而增加潜在通道数量只会产生最小的额外计算成本（仅影响输入和输出层）。我们定义标记下采样比Dtoken为自编码器的压缩比（DT|H|W）和生成模型的块大小（PT|H|W）在T、H、W维度上的乘积：</p>
+        
+        <p style="text-align: center;">Dtoken = DT × DH × DW × PT × PH × PW</p>
+        
+        <p>例如，在5秒、24fps、768px视频中，HunyuanVideo VAE的4×8×8压缩结合生成模型的1×2×2块大小（Dtoken = 1024）将标记数减少到76K，而Video DC-AE的4×32×32压缩和1×1×1块大小具有4096的Dtoken，有效将标记数减少到19K。如图7所示，这种压缩在训练吞吐量上产生5.2倍的加速。此外，推理速度提高了10倍以上，使其成为一种高效方法。</p>
+        
+        <div class="figure">
+            <img src="/api/placeholder/800/400" alt="768px训练和推理速度比较">
+            <div class="figure-caption">图7：768px下的训练和推理速度比较。该图比较了使用HunyuanVideo VAE（4×8×8，块大小2）和Video DC-AE（4×32×32，块大小1）在768px分辨率下的训练和推理速度。结果表明，相比HunyuanVideo VAE，Video DC-AE在训练和推理（50步）方面都实现了显著更高的效率，强调了其在高分辨率视频生成中的优势。</div>
+        </div>
+        
+        <p><strong>训练视频自编码器的挑战：</strong>随着视频生成模型的兴趣增长，我们观察到，尽管在架构、下采样比、通道数和训练损失上有所变化，但在类似信息下采样比下训练的视频自编码器表现出可比的性能（在256px分辨率下评估）[9]。我们将信息下采样比Dinfo定义为：</p>
+        
+        <p style="text-align: center;">Dinfo = (DT × DH × DW × Cin) / Cout</p>
+        
+        <p>其中Cin和Cout是输入和输出通道的数量（注意，对于使用RGB通道的视频，Cin = 3）。我们不考虑实际存储大小，因为可能存在不同数据类型（如float32或bfloat16）使用的混淆因素。</p>
+        
+        <p>我们假设Dinfo与重建性能之间的这种联系表明，给定分辨率的基本信息压缩下限，从而限制了除非调整通道数，否则可实现的压缩比。我们的两个256通道和128通道的视频自编码器分别设计为匹配HunyuanVideo VAE和StepVideo VAE的Dinfo。</p>
+        
+        <p>然而，训练深度视频压缩网络具有挑战性。先前工作[9]在下采样和上采样块中发现梯度传播问题。为解决这一问题，他们在这些块中引入残差连接，使用像素混洗和反混洗操作。我们验证了使用残差连接训练HunyuanVideo VAE架构可以提高性能。基于此，我们将时间下采样纳入DC-AE构建Video DC-AE。</p>
+        
+        <p>此外，我们发现，当将高度和宽度压缩比加倍时，保持类似的重建性能需要通道数增加4倍，而在原始图像DC-AE（无时间压缩）之上添加4倍时间压缩不需要额外通道，可能是由于时间信息的冗余。基于这些见解，我们训练了一个Video DC-AE，其Dinfo比HunyuanVideo VAE高2倍，Dtoken高16倍，同时保持可比的性能。</p>
+        
+        <div class="figure">
+            <img src="/api/placeholder/800/400" alt="不同自编码器压缩比的视频生成比较">
+            <div class="figure-caption">图8：不同自编码器压缩比的视频生成比较。上下行分别对应较低和较高压缩比。虽然更高压缩比的AE产生略微模糊的输出，但它显著提高了生成速度。</div>
+        </div>
+        
+        <p><strong>使用高压缩自编码器的策略：</strong>尽管使用高压缩自编码器进行训练面临挑战，我们采用以下策略构建快速视频生成模型：</p>
+        
+        <ol>
+            <li><strong>潜在空间蒸馏：</strong>训练Video DC-AE后，我们应用蒸馏损失将第三层潜在表示与DINOv2[30]对齐，利用它们相似的潜在形状。</li>
+            <li><strong>扩散模型的高效适配：</strong>遵循PixArt，扩散模型可以适应不同的自编码器。我们重新初始化模型的输入和输出层进行适配。我们发现，适配高压缩自编码器的行为略有不同。语义结构适应得很快，但视频输出看起来模糊。</li>
+            <li><strong>优先图像到视频训练：</strong>我们观察到，从高压缩AE切换时，图像到视频模型比文本到视频模型适应得更有效。因此，我们专注于为这种设置训练图像到视频模型。</li>
+            <li><strong>视频编码中的平铺：</strong>在低分辨率训练的高压缩AE在重建高分辨率视频时性能下降[9]。虽然我们本可以在高分辨率上微调Video DC-AE，但我们重用了Kong等人[19]的平铺代码以节省训练资源。</li>
+        </ol>
+        
+        <p>我们首先使用20M样本在160个GPU上训练模型，在短视频（最多33帧）上进行17K次迭代。然后，我们使用2M样本将训练扩展到长视频（最多128帧），进行8K次迭代。最终模型达到0.5的损失水平，而初始化模型为0.1。然而，由于计算限制，训练并未完全收敛。如图8所示，虽然快速视频生成模型的性能不如原始模型，但它仍能捕捉时空关系。我们将此模型发布给研究社区，以便进一步探索。</p>
+        
+        <p><strong>讨论和未来工作：</strong>我们相信高压缩自编码器对端到端视频生成至关重要，特别是对于包含大量冗余的高分辨率视频。为进一步降低训练成本，必须：(1)优化自编码器训练，为基于扩散的学习产生更好的潜在空间。(2)设计高吞吐量自编码器，因为自编码器编码时间仍然是使用高压缩自编码器的生成模型中的主要计算瓶颈。</p>
+        
+        <h3>4.4 AE训练</h3>
+        <p>我们从头训练具有两种不同通道大小的Video DC-AE，即256通道和128通道。遵循DC-AE，我们的训练损失没有KL损失组件。我们首先使用重建损失L1和感知损失LLPIPS训练Video DC-AE 250k步：</p>
+        
+        <p style="text-align: center;">L = L1 + 0.5LLPIPS</p>
+        
+        <p>然后添加对抗性损失组件Ladv，再训练200k步：</p>
+        
+        <p style="text-align: center;">L = L1 + 0.5LLPIPS + 0.05Ladv</p>
+        
+        <p>我们在8个GPU上训练每个AE模型，本地批量大小为1。我们的训练数据由纵横比为1:1的256px视频的32帧组成。我们使用AdamW优化器为AE设置5e-5的固定学习率，β值为(0.9, 0.999)，ϵ值为1×10^-15，没有权重衰减。判别器的学习率调整为1e-4，其他优化器参数不变。我们在阈值为1处应用梯度范数裁剪。</p>
+    </div>
+    
+    <div class="section">
+        <h2>5. 条件控制</h2>
+        <h3>5.1 图像到视频训练</h3>
+        <p>Open-Sora 1.2引入了一个通用条件框架，允许在任何帧应用图像和视频条件。然而，其原始方法用条件替换噪声输入，导致不同输入的时间步不一致。为解决这个问题，我们修改了框架，将条件作为额外通道连接，确保速度预测任务保持不变。</p>
+        
+        <div class="figure">
+            <img src="/api/placeholder/800/300" alt="图像和视频条件框架">
+            <div class="figure-caption">图9：图像和视频条件框架。条件信息通过额外的通道维度注入到模型中。引入了掩码机制以区分不同的输入类型。这种设计支持广泛的图像到视频(I2V)和视频到视频(V2V)任务。</div>
+        </div>
+        
+        <p>如图9所示，我们的方法首先使用自编码器编码图像或视频条件，然后将编码特征与原始视频潜在表示连接。引入额外通道指示任务类型，将通道数从k增加到2k+1。</p>
+        
+        <p>为改善泛化能力，我们引入了类似于文本条件丢弃的图像条件丢弃。在训练过程中，丢弃图像条件将问题简化为文本到视频的设置，此时将零张量与视频潜在表示连接。对于T/I2V训练，我们将丢弃率设置为12.5%，确保在各种图像到视频(I2V)和文本到视频(T2V)任务中的稳健性。</p>
+        
+        <h3>5.2 图像到视频推理</h3>
+        <p>我们使用无分类器引导进行推理[13]。由于我们的模型同时基于图像和文本条件，一种直接的方法是使用单一引导尺度：</p>
+        
+        <p style="text-align: center;">vt = vθ(xt, t, ∅, ∅) + g · (vθ(xt, t, txt, img) - vθ(xt, t, ∅, ∅))</p>
+        
+        <p>其中vθ表示预测的速度，g是引导尺度。然而，我们发现这种方法并不理想。图像引导仅需要小引导尺度，因为大值会使整个视频静态，而文本引导则受益于更高的尺度，改善语义对齐。为解决这一问题，我们解耦引导项如下：</p>
+        
+        <p style="text-align: center;">vt = vθ(xt, t, ∅, ∅) + gimg · (vθ(xt, t, ∅, img) - vθ(xt, t, ∅, ∅)) + gtxt · (vθ(xt, t, txt, img) - vθ(xt, t, ∅, img))</p>
+        
+        <p>使用高图像引导时，有时会在生成的视频中引入闪烁。为缓解这一问题，我们为图像引导引入了引导振荡技术[14]。以50步采样为例，在前10步之后，我们交替图像引导尺度：在奇数步应用原始gimg，而在偶数步则将其降至1。这有助于平衡稳定性和运动一致性。</p>
+        
+        <p>除了振荡外，我们引入了动态图像引导缩放策略。由于图像条件主要应用于第一帧，视频末尾的帧需要更强的图像引导以保持一致性。同时，随着去噪进行，视频场景大多已形成，使得图像引导在后期扩散步骤中不那么关键。为优化这两种效果，我们根据帧索引和去噪步骤动态调整gimg。如图10所示，我们测试了线性和二次缩放，发现在两个维度上的线性缩放提供了最佳性能。在实践中，我们使用默认引导值gimg = 3，gtxt = 7.5，在运动保真度和语义准确性之间取得平衡。</p>
+        
+        <div class="figure">
+            <img src="/api/placeholder/600/400" alt="图像引导尺度热图">
+            <div class="figure-caption">图10：去噪步骤和潜在帧中的图像引导尺度热图。较暗区域表示更高的图像引导值，强调在后期帧和早期去噪步骤中的较强影响。</div>
+        </div>
+        
+        <h3>5.3 运动分数</h3>
+        <p>控制运动强度水平是视频生成中的一个关键特性。根据场景，用户可能偏好具有最小运动的高保真视频，或具有显著运动的高动态视频。虽然诸如无分类器引导缩放和移动去噪步骤等技术可以影响运动强度，但我们发现这些方法往往与其他因素纠缠，如视觉质量和文本对齐，使精确控制变得具有挑战性。为解决这一问题，我们将运动动态明确建模为一个单独的可控参数。</p>
+        
+        <p>我们利用从数据预处理获得的运动分数，该分数量化视频中的动态水平。此运动分数作为额外的条件信号附加到描述中。在推理过程中，调整运动分数允许对生成视频的动态水平进行有效且独立的控制，如图11所示。</p>
+        
+        <div class="figure">
+            <img src="/api/placeholder/800/300" alt="运动分数对视频生成的影响">
+            <div class="figure-caption">图11：运动分数对视频生成的影响。该图说明了不同运动分数对生成视频的影响。随着运动分数增加，相机运动变得更加明显，场景内的整体动态运动增加。</div>
+        </div>
+    </div>
+    
+    <div class="section">
+        <h2>6. 系统优化</h2>
+        <p>我们使用ColossalAI[21]训练模型，这是一个高效的并行训练系统。我们的硬件设置包括H200 GPU，其141GB内存使得更有效的数据并行(DP)成为可能，并允许更激进的选择性激活检查点，显著优化资源利用。此外，我们利用PyTorch compile[1]和Triton内核[29]来加速训练效率。</p>
+        
+        <h3>6.1 并行策略</h3>
+        <p>为高效处理高分辨率视频训练，我们采用多种并行化技术。对于视频自编码器，我们将张量并行(TP)[36]应用于卷积层，通过在输入或输出通道维度上分割权重，减少内存消耗，同时防止高分辨率训练中的越界索引。</p>
+        
+        <p>对于MMDiT训练，我们将零冗余优化器(ZeroDP)[33]与上下文并行(CP)[24]相结合。在这里，视频和文本序列沿序列维度在GPU之间进行分区，使每个GPU能够独立计算注意力。这种方法有效缓解了内存瓶颈并增强了注意力计算的效率，这对高分辨率视频特别有益，其中注意力复杂度呈二次增长。</p>
+        
+        <p>在H200 GPU（141GB内存）上的经验评估表明，单独使用CP在内存效率和计算性能之间达到了最佳权衡。在阶段1和阶段2训练中，我们完全利用数据并行(DP)与ZeRO-2结合，实现了38.19%的最大FLOPs利用率(MFU)。在阶段3中，我们整合ZeRO-2与CP=4，导致MFU为35.75%。</p>
+        
+        <h3>6.2 激活检查点</h3>
+        <p>选择性应用激活检查点以减少内存消耗，而不显著增加计算开销。而不是存储中间激活，只保留块输入，并在反向传播期间重新计算前向传递。为最小化降速，我们避免为每一层启用检查点。在阶段1和阶段2，仅对8层双流块和所有单流块应用检查点，而在阶段3中，对所有块启用检查点，并辅以激活卸载到CPU。卸载机制通过异步传输激活张量进一步减少内存占用，利用固定内存和异步数据移动来最小化训练减速。
+
+        <h3>6.3 自动恢复</h3>
+        <p>为确保在大规模分布式环境中连续训练，我们实现了一个自动恢复系统，以处理意外故障，如InfiniBand故障、存储系统崩溃和NCCL错误。该系统持续监控训练状态，检查无响应、显著减速或损失突增。在检测到问题时，所有进程停止，故障节点检查器诊断故障节点。如有必要，部署备用机器，并从最后一个检查点自动恢复训练，而不会遇到损失突增。凭借这一策略，我们的GPU利用率超过99%，最小化停机时间并优化硬件效率。</p>
+        
+        <h3>6.4 数据加载器</h3>
+        <p>为加速主机（CPU）和设备（GPU）之间的数据移动，我们优化了PyTorch的数据加载器。我们不依赖PyTorch的默认固定内存分配（它调用cudaMallocHost并可能阻塞CUDA内核执行），而是采用预分配的固定内存缓冲区，以防止动态内存分配并减少开销，特别是对于大型视频输入。此外，我们将数据传输与计算重叠，确保在处理当前批次时预取下一步的数据。</p>
+        
+        <p>此外，我们缓解了Python垃圾收集（GC）开销，它可能不可预测地暂停执行并在多进程分布式训练中造成严重效率低下。为解决这一问题，我们禁用全局GC并实现手动内存管理，防止不必要的同步延迟。</p>
+        
+        <h3>6.5 检查点优化</h3>
+        <p>在分布式训练中，高效的模型检查点对于最小化恢复延迟至关重要。检查点保存过程涉及三个关键步骤：首先，如果模型是分片的，必须通过GPU间通信重建完整权重；其次，模型权重从CUDA内存传输到CPU内存；最后，权重从CPU写入磁盘。</p>
+        
+        <p>为优化第二和第三步，我们采用预分配的固定内存来显著加速权重传输，并通过C++实现异步磁盘写入，从而确保文件I/O不阻塞主训练过程。这些优化将模型保存开销减少到秒级，极大地加速了训练。</p>
+        
+        <p>对于检查点加载，过程涉及从磁盘读取模型权重并将其从CPU传输到CUDA。我们通过使用具有多线程分配的异步固定内存复制来提高效率，并在分片读取和权重传输之间实现流水线执行。此外，对于存储在多个分片中的大型模型，我们跨分片重叠这些阶段以最大化并行性并加速加载过程。这些优化减少了训练恢复的开销。</p>
+    </div>
+    
+    <div class="section">
+        <h2>7. 性能</h2>
+        <p>我们的模型支持在256×256px和768×768px分辨率（以下简称为256px和768px）的文本到视频和图像到视频生成，生成长达128帧的视频。以24 FPS计算，这相当于5秒的持续时间。由于我们的模型针对图像到视频生成进行了优化，默认的文本到图像到视频流程首先使用FLUX模型生成图像，然后用作视频生成的起始帧。生成的结果如图12所示。</p>
+        
+        <div class="figure">
+            <img src="/api/placeholder/800/1600" alt="Open-Sora 2.0生成的高质量视频">
+            <div class="figure-caption">图12：Open-Sora 2.0生成的高质量视频</div>
+        </div>
+        
+        <p>为将我们的模型与其他方法进行基准比较，我们使用Open-Sora 2.0以及几个闭源API和开源模型，使用一组100个文本提示生成视频。为确保公平，我们每个模型仅执行一次推理，避免任何精选。对于所有模型，我们使用它们的默认设置，视频长度从5到6秒不等，分辨率在768px和720p之间，取决于它们的生成约束。</p>
+        
+        <p>由10名专业评估员进行了盲评，根据三个关键标准评估视频：</p>
+        
+        <ul>
+            <li><strong>视觉质量：</strong>哪个视频展示了更高的视觉保真度和更具美学吸引力？</li>
+            <li><strong>提示遵循度：</strong>哪个视频与给定文本提示更准确对齐？</li>
+            <li><strong>运动质量：</strong>哪个视频保持更一致的运动并更好地遵循物理规律？</li>
+        </ul>
+        
+        <p>评估结果如图1所示，表明我们的模型在几个维度上优于现有模型，并在所有类别中实现了有竞争力的性能。</p>
+        
+        <div class="figure">
+            <img src="/api/placeholder/800/500" alt="VBench评分比较">
+            <div class="figure-caption">图13：VBench评分比较。我们的模型通过利用文本到图像到视频生成方法优于开源文本到视频模型。此外，我们最新版本显著缩小了Open-Sora和OpenAI的Sora之间的性能差距，展示了视频生成质量和一致性的实质性改进。</div>
+        </div>
+        
+        <p>我们进一步使用VBench[17]评估我们模型的性能，如表13所示，展示了从Open-Sora 1.2到2.0的显著进步。Open-Sora与OpenAI的Sora之间的性能差距已从4.52%减少到0.69%，突显了视频生成质量的实质性进步。此外，我们的模型相比CogVideoX1.5-5B和HunyuanVideo实现了更高的VBench分数，进一步确立了其在当前开源文本到视频模型中的优势地位。</p>
+    </div>
+    
+    <div class="section">
+        <h2>8. 结论</h2>
+        <p>本报告介绍了Open-Sora 2.0，这是一个仅花费20万美元训练的商业级视频生成模型，比MovieGen和Step-Video-T2V等可比模型的成本低5-10倍。这一成就强调了通过数据筛选、模型架构、训练策略和系统优化的仔细优化，高质量视频生成模型可以以高度可控的成本开发。尽管训练成本显著较低，Open-Sora 2.0的性能与领先的视频生成模型（包括HunyuanVideo和Runway Gen-3 Alpha）相当。该模型支持文本到视频和图像到视频生成，分辨率高达768×768像素，视频长度最多5秒。</p>
+        
+        <p>展望未来，视频生成仍存在几个挑战。首先，深度压缩视频VAE技术仍未被充分探索。虽然我们积极增加压缩比以减少潜在标记，但这种方法会导致重建质量损失和适配困难。此外，扩散模型经常产生不可预测的伪影，如对象扭曲和不自然的物理效果，用户对这些细节的控制有限。该领域需要进一步研究伪影预防和对生成内容的增强控制。我们希望通过开源Open-Sora 2.0，我们能为社区提供工具，共同解决这些挑战，促进视频生成领域的创新和进步。</p>
+    </div>
+    
+    <div class="contributors">
+        <h2>贡献者</h2>
+        <p>核心贡献者是那些从始至终参与Open-Sora 2.0开发的人，而贡献者是那些兼职贡献的人。所有贡献者按名字字母顺序列出。</p>
+        
+        <ul>
+            <li><strong>项目领导者：</strong>彭相宇，郑藏伟。</li>
+            <li><strong>核心贡献者：</strong>
+                <ul>
+                    <li><strong>模型与训练：</strong>沈陈辉，Tom Young，郭新颖。</li>
+                    <li><strong>基础架构：</strong>王彬罗，徐航，刘宏新，蒋明燕，李文军，王宇辉。</li>
+                    <li><strong>数据与评估：</strong>叶安邦，任刚，马倩然，梁万英，连翔，吴希文，钟宇婷，李庄严。</li>
+                </ul>
+            </li>
+            <li><strong>贡献者：</strong>龚超宇，雷国军，程雷军，张黎敏，李明浩，张瑞杰，胡思兰，黄世杰，王晓康，赵远恒，王雨琦，魏子昂。</li>
+            <li><strong>通讯作者：</strong>杨友（youy@comp.nus.edu.sg）。</li>
+        </ul>
+    </div>
+    
+    <div class="references">
+        <h2>参考文献</h2>
+        <ol>
+            <li>J. Ansel et al., "PyTorch 2: Faster Machine Learning Through Dynamic Python Bytecode Transformation and Graph Compilation," in 29th ACM International Conference on Architectural Support for Programming Languages and Operating Systems, 2024.</li>
+            <li>P. Authors, Paddleocr: A practical ultra lightweight ocr system, 2020.</li>
+            <li>G. Bradski, "The OpenCV library," Dr. Dobb's Journal of Software Tools, 2000.</li>
+            <li>T. Brooks et al., "Video generation models as world simulators," 2024.</li>
+            <li>H. Cai, J. Li, M. Hu, C. Gan, and S. Han, "EfficientViT: Lightweight multi-scale attention for high-resolution dense prediction," in Proceedings of the IEEE/CVF international conference on computer vision, 2023.</li>
+            <li>B. Castellano, PySceneDetect: Video scene cut detection and analysis tool, 2023.</li>
+            <li>H. Chen et al., "Masked autoencoders are effective tokenizers for diffusion models," arXiv preprint, 2025.</li>
+            <li>J. Chen et al., "PixArt-alpha: Fast training of diffusion transformer for photorealistic text-to-image synthesis," arXiv preprint, 2023.</li>
+            <li>J. Chen et al., "Deep compression autoencoder for efficient high-resolution diffusion models," arXiv preprint, 2024.</li>
+            <li>H. W. Chung et al., "Scaling instruction-finetuned language models," Journal of Machine Learning Research, 2024.</li>
+            <li>P. Esser et al., "Scaling rectified flow transformers for high-resolution image synthesis," in International Conference on Machine Learning, 2024.</li>
+            <li>FFmpeg Developers, FFmpeg, 2023.</li>
+            <li>J. Ho and T. Salimans, "Classifier-free diffusion guidance," arXiv preprint, 2022.</li>
+            <li>J. Ho et al., "Imagen video: High definition video generation with diffusion models," arXiv preprint, 2022.</li>
+            <li>J. Hoffmann et al., "Training compute-optimal large language models," arXiv preprint, 2022.</li>
+            <li>W. Hong, M. Ding, W. Zheng, X. Liu, and J. Tang, "CogVideo: Large-scale pretraining for text-to-video generation via transformers," arXiv preprint, 2022.</li>
+            <li>Z. Huang et al., "VBench: Comprehensive benchmark suite for video generative models," in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, 2024.</li>
+            <li>J. Kaplan et al., "Scaling laws for neural language models," arXiv preprint, 2020.</li>
+            <li>W. Kong et al., "HunyuanVideo: A systematic framework for large video generative models," arXiv preprint, 2024.</li>
+            <li>B. F. Labs, Flux, 2024.</li>
+            <li>S. Li et al., "Colossal-AI: A unified deep learning system for large-scale parallel training," in Proceedings of the 52nd International Conference on Parallel Processing, 2023.</li>
+            <li>B. Lin et al., "Open-sora plan: Open-source large video generation model," arXiv preprint, 2024.</li>
+            <li>Y. Lipman, R. T. Chen, H. Ben-Hamu, M. Nickel, and M. Le, "Flow matching for generative modeling," arXiv preprint, 2022.</li>
+            <li>H. Liu, M. Zaharia, and P. Abbeel, "Ring attention with blockwise transformers for near-infinite context," arXiv preprint, 2023.</li>
+            <li>I. Loshchilov and F. Hutter, "Decoupled weight decay regularization," arXiv preprint, 2017.</li>
+            <li>Luma AI. "Dream machine," 2025.</li>
+            <li>G. Ma et al., "Step-video-t2v technical report: The practice, challenges, and future of video foundation model," arXiv preprint, 2025.</li>
+            <li>X. Ma et al., "Latte: Latent diffusion transformer for video generation," arXiv preprint, 2024.</li>
+            <li>OpenAI, Triton: An open-source programming language for writing highly efficient gpu code, 2019.</li>
+            <li>M. Oquab et al., "DINOv2: Learning robust visual features without supervision," arXiv preprint, 2023.</li>
+            <li>A. Polyak et al., "Movie gen: A cast of media foundation models," arXiv preprint, 2024.</li>
+            <li>A. Radford et al., "Learning transferable visual models from natural language supervision," in ICML, 2021.</li>
+            <li>S. Rajbhandari, J. Rasley, O. Ruwase, and Y. He, "Zero: Memory optimizations toward training trillion parameter models," arXiv preprint, 2020.</li>
+            <li>RunwayML. "Introducing Gen-3 Alpha," 2025.</li>
+            <li>C. Schuhmann. "Improved aesthetic predictor," GitHub, 2021.</li>
+            <li>M. Shoeybi, M. Patwary, R. Puri, P. LeGresley, J. Casper, and B. Catanzaro, "Megatron-lm: Training multi-billion parameter language models using model parallelism," arXiv preprint, 2020.</li>
+            <li>J. Su, M. Ahmed, Y. Lu, S. Pan, W. Bo, and Y. Liu, "Roformer: Enhanced transformer with rotary position embedding," Neurocomputing, 2024.</li>
+            <li>Q. Team, "Qwen2.5 technical report," arXiv preprint, 2024.</li>
+            <li>E. Xie et al., "Sana: Efficient high-resolution image synthesis with linear diffusion transformers," arXiv preprint, 2024.</li>
+            <li>J. Yao and X. Wang, "Reconstruction vs. generation: Taming optimization dilemma in latent diffusion models," arXiv preprint, 2025.</li>
+            <li>R. Zhang, P. Isola, A. A. Efros, E. Shechtman, and O. Wang, "The unreasonable effectiveness of deep features as a perceptual metric," in Proceedings of the IEEE conference on computer vision and pattern recognition, 2018.</li>
+            <li>Y. Zhang et al., "Video instruction tuning with synthetic data," arXiv preprint, 2024.</li>
+            <li>Z. Zheng et al., "Open-sora: Democratizing efficient video production for all," arXiv preprint, 2024.</li>
+        </ol>
+    </div>
+</body>
+</html>
